@@ -251,6 +251,7 @@ class MultiPathPPDataset(Dataset):
 
 def get_dataloader(config):
     dataset = MultiPathPPDataset(config["dataset_config"])
+    config["dataloader_config"]["num_workers"] = 0
     dataloader = DataLoader(
         dataset, collate_fn=MultiPathPPDataset.collate_fn, **config["dataloader_config"])
     return dataloader

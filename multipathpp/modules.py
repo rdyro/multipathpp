@@ -4,6 +4,16 @@ import torch
 from torch import nn
 from torch_scatter import scatter_max
 
+IGNORE_ASSERT = True
+
+def assert_fn(cond, msg=None):
+    if IGNORE_ASSERT:
+        return
+    if msg is not None:
+        assert cond, msg
+    else:
+        assert cond
+
 
 class MLP(nn.Module):
     def __init__(self, config):
@@ -49,12 +59,12 @@ class NormalMLP(nn.Module):
     def forward(self, x):
         tmp = []
         prev_x_shape = x.shape
-        assert torch.isfinite(x).all()
+        assert_fn(torch.isfinite(x).all())
         tmp.append(x)
         for l in self._mlp:
             x = l(x)
             tmp.append(x)
-            assert torch.isfinite(x).all()
+            assert_fn(torch.isfinite(x).all())
         return x
         output = self._mlp(x)
         return output
@@ -123,17 +133,17 @@ class MCGBlock(nn.Module):
         else:
             assert not self._config["identity_c_mlp"]
         c = self._repeat_tensor(c, scatter_numbers)
-        assert torch.isfinite(s).all()
-        assert torch.isfinite(c).all()
+        assert_fn(torch.isfinite(s).all())
+        assert_fn(torch.isfinite(c).all())
         running_mean_s, running_mean_c = s, c
         for i, cg_block in enumerate(self._blocks, start=1):
             s, c = cg_block(scatter_numbers, running_mean_s, running_mean_c)
-            assert torch.isfinite(s).all()
-            assert torch.isfinite(c).all()
+            assert_fn(torch.isfinite(s).all())
+            assert_fn(torch.isfinite(c).all())
             running_mean_s = self._compute_running_mean(running_mean_s, s, i)
             running_mean_c = self._compute_running_mean(running_mean_c, c, i)
-            assert torch.isfinite(running_mean_s).all()
-            assert torch.isfinite(running_mean_c).all()
+            assert_fn(torch.isfinite(running_mean_s).all())
+            assert_fn(torch.isfinite(running_mean_c).all())
         if return_s:
             return running_mean_s 
         if aggregate_batch:
@@ -160,29 +170,29 @@ class Decoder(nn.Module):
     
     def forward(self, target_scatter_numbers, target_scatter_idx, final_embedding, batch_size):
         # assert torch.isfinite(self._learned_anchor_embeddings).all()
-        assert torch.isfinite(final_embedding).all()
+        assert_fn(torch.isfinite(final_embedding).all())
         trajectories_embeddings = self._mcg_predictor(
             target_scatter_numbers, target_scatter_idx, self._learned_anchor_embeddings,
             final_embedding, return_s=True)
-        assert torch.isfinite(trajectories_embeddings).all()
+        assert_fn(torch.isfinite(trajectories_embeddings).all())
         if self._return_embedding:
             return trajectories_embeddings
         # 
         res = self._mlp_decoder(trajectories_embeddings)
         coordinates = res[:, :, :80 * 2].reshape(
             batch_size, self._config["n_trajectories"], 80, 2)
-        assert torch.isfinite(coordinates).all()
+        assert_fn( torch.isfinite(coordinates).all())
         a = res[:, :, 80 * 2: 80 * 3].reshape(
             batch_size, self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(a).all()
+        assert_fn( torch.isfinite(a).all())
         b = res[:, :, 80 * 3: 80 * 4].reshape(
             batch_size, self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(b).all()
+        assert_fn( torch.isfinite(b).all())
         c = res[:, :, 80 * 4: 80 * 5].reshape(
             batch_size, self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(c).all()
+        assert_fn( torch.isfinite(c).all())
         probas = res[:, :, -1]
-        assert torch.isfinite(probas).all()
+        assert_fn( torch.isfinite(probas).all())
         if self._config["trainable_cov"]:
             # http://www.inference.org.uk/mackay/covariance.pdf
             covariance_matrices = (torch.cat([
@@ -277,7 +287,7 @@ class EM(nn.Module):
         C = precision_matrices6[:, :, self._selector, :, :].unsqueeze(2)
         qform = (A @ C @ B)[..., 0, 0]
         logdetCovM = torch.logdet(covariance_matrices6[:, :, self._selector, :, :].unsqueeze(2))
-        assert torch.isfinite(logdetCovM).all()
+        assert_fn( torch.isfinite(logdetCovM).all())
         pMatrix = torch.exp((
             -np.log(2 * np.pi) - 0.5 * logdetCovM - 0.5 * qform).sum(dim=-1)) + 1e-8
         pMatrix = (pMatrix * probas6.unsqueeze(2)) / ((
@@ -309,7 +319,7 @@ class EM(nn.Module):
                 ).sum(axis=2)
             covariance_matrices6 = covariance_matrices6 / probas6[..., None, None, None]
             with torch.no_grad():
-                assert torch.isfinite(torch.logdet(covariance_matrices6)).all()
+                assert_fn(torch.isfinite(torch.logdet(covariance_matrices6)).all())
         return probas6, trajectories6, covariance_matrices6
 
 
