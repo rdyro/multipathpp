@@ -2,9 +2,29 @@ import math
 import numpy as np
 import torch
 from torch import nn
-from torch_scatter import scatter_max
 
 IGNORE_ASSERT = True
+
+def scatter_max(src, index, dim=-1):
+    dim = dim if dim >= 0 else src.ndim + dim + 1
+    index_ = index
+    assert index.ndim == 1
+    for i in range(src.ndim):
+        if i == dim:
+            continue
+        if i > dim:
+            index_ = index_[..., None]
+        else:
+            index_ = index_[None, ...]
+    broadcast_shape = list(src.shape)
+    broadcast_shape[dim] = index.shape[0]
+    index_ = torch.broadcast_to(index_, broadcast_shape)
+
+    out_shape = list(src.shape)
+    out_shape[dim] = torch.max(index).item() + 1
+    ret = torch.full(out_shape, -math.inf).to(src)
+    ret = torch.scatter_reduce(ret, 0, index_, src, "max")
+    return ret
 
 def assert_fn(cond, msg=None):
     if IGNORE_ASSERT:
@@ -147,7 +167,10 @@ class MCGBlock(nn.Module):
         if return_s:
             return running_mean_s 
         if aggregate_batch:
-            return scatter_max(running_mean_c, scatter_idx, dim=0)[0]
+            #from torch_scatter import scatter_max as scatter_max_
+            #return scatter_max_(running_mean_c, scatter_idx, dim=0)[0]
+            return scatter_max(running_mean_c, scatter_idx, dim=0)
+
         return running_mean_c
 
 
